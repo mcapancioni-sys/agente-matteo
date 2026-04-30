@@ -24,9 +24,9 @@ def invia_telegram(messaggio):
         print(f"Errore invio: {e}")
         return None
 
-# ========== ANALISI MATERIE PRIME ==========
 def analisi_materie_prime():
-    """Recupera e analizza i prezzi delle materie prime"""
+    """Analisi dettagliata prezzi metalli ed energetici"""
+    
     commodities = {
         '🪙 Oro': 'GC=F',
         '🥈 Argento': 'SI=F',
@@ -36,33 +36,94 @@ def analisi_materie_prime():
         '⛽ Gas Naturale': 'NG=F'
     }
     
-    report = "📊 <b>ANALISI MATERIE PRIME</b>\n"
+    report = "📊 <b>RAPPORTO MATERIE PRIME - ANALISI COMPLETA</b>\n"
     report += f"📅 {datetime.now().strftime('%A %d %B %Y')}\n"
-    report += "━" * 20 + "\n\n"
+    report += "━" * 25 + "\n\n"
+    
+    soglie = {
+        '🪙 Oro': {'min': 2300, 'max': 2450},
+        '🔴 Rame': {'min': 4.20, 'max': 4.80},
+        '🛢️ Petrolio WTI': {'min': 75, 'max': 90}
+    }
+    
+    alert_messages = []
     
     for nome, simbolo in commodities.items():
         try:
             ticker = yf.Ticker(simbolo)
-            hist = ticker.history(period='5d')
-            hist_20d = ticker.history(period='20d')
             
-            if len(hist) >= 2:
-                prezzo = hist['Close'].iloc[-1]
-                prezzo_ieri = hist['Close'].iloc[-2]
-                var = ((prezzo - prezzo_ieri) / prezzo_ieri) * 100
-                media_20 = hist_20d['Close'].mean()
-                trend = "📈 rialzista" if prezzo > media_20 else "📉 ribassista"
-                freccia = "🟢 +" if var > 0 else "🔴 "
+            # Scarichiamo diversi periodi
+            hist_1gg = ticker.history(period='1d')
+            hist_5gg = ticker.history(period='5d')
+            hist_1m = ticker.history(period='1mo')
+            hist_1y = ticker.history(period='1y')
+            
+            if len(hist_5gg) >= 2 and len(hist_1m) >= 2 and len(hist_1y) >= 2:
+                prezzo = hist_5gg['Close'].iloc[-1]
                 
+                # Calcoli variazioni
+                prezzo_ieri = hist_5gg['Close'].iloc[-2]
+                var_giorno = ((prezzo - prezzo_ieri) / prezzo_ieri) * 100
+                
+                prezzo_settimana_fa = hist_5gg['Close'].iloc[0] if len(hist_5gg) >= 5 else prezzo
+                var_settimana = ((prezzo - prezzo_settimana_fa) / prezzo_settimana_fa) * 100
+                
+                prezzo_mese_fa = hist_1m['Close'].iloc[0] if len(hist_1m) >= 20 else prezzo
+                var_mese = ((prezzo - prezzo_mese_fa) / prezzo_mese_fa) * 100
+                
+                # Statistiche annuali
+                max_annuale = hist_1y['High'].max()
+                min_annuale = hist_1y['Low'].min()
+                posizione_annuale = ((prezzo - min_annuale) / (max_annuale - min_annuale)) * 100
+                
+                # Volume
+                volume_medio = hist_5gg['Volume'].mean()
+                volume_oggi = hist_5gg['Volume'].iloc[-1]
+                volume_ratio = (volume_oggi / volume_medio) * 100
+                
+                # Trend
+                media_20gg = hist_1m['Close'].mean() if len(hist_1m) >= 20 else prezzo
+                trend = "🟢 RIALZISTA" if prezzo > media_20gg else "🔴 RIBASSISTA"
+                
+                # Costruzione report per singola commodity
                 report += f"<b>{nome}</b>\n"
-                report += f"  💰 ${prezzo:.2f}\n"
-                report += f"  📊 {freccia}{var:.2f}%\n"
-                report += f"  📈 {trend}\n\n"
+                report += f"  💰 Prezzo: <b>${prezzo:.2f}</b>\n"
+                report += f"\n  📈 <u>Variazioni:</u>\n"
+                report += f"     Oggi: {f'🟢 +{var_giorno:+.2f}%' if var_giorno > 0 else f'🔴 {var_giorno:+.2f}%'}\n"
+                report += f"     Settimana: {f'🟢 +{var_settimana:+.2f}%' if var_settimana > 0 else f'🔴 {var_settimana:+.2f}%'}\n"
+                report += f"     Mese: {f'🟢 +{var_mese:+.2f}%' if var_mese > 0 else f'🔴 {var_mese:+.2f}%'}\n"
+                report += f"\n  📊 <u>Range annuale:</u>\n"
+                report += f"     Min: ${min_annuale:.2f}\n"
+                report += f"     Max: ${max_annuale:.2f}\n"
+                report += f"     Posizione: {posizione_annuale:.0f}% del range\n"
+                report += f"\n  📊 <u>Volume scambi:</u>\n"
+                report += f"     Oggi: {volume_oggi:,.0f}\n"
+                report += f"     vs media: {f'🟢 +{volume_ratio:.0f}%' if volume_ratio > 100 else f'🔴 {volume_ratio:.0f}%'}\n"
+                report += f"\n  📈 Trend 20gg: {trend}\n"
+                report += "\n"
+                
+                # Alert personalizzati
+                if nome in soglie:
+                    if prezzo > soglie[nome]['max']:
+                        alert_messages.append(f"⚠️ {nome} sopra soglia max: ${prezzo:.2f} > ${soglie[nome]['max']}")
+                    elif prezzo < soglie[nome]['min']:
+                        alert_messages.append(f"⚠️ {nome} sotto soglia min: ${prezzo:.2f} < ${soglie[nome]['min']}")
+                        
         except Exception as e:
-            report += f"<b>{nome}</b>\n  ❌ Dati non disponibili\n\n"
+            report += f"<b>{nome}</b>\n  ❌ Dati non disponibili al momento\n\n"
+    
+    # Sezione alert
+    if alert_messages:
+        report += "━" * 25 + "\n"
+        report += "🚨 <b>ALERT DI MERCATO</b>\n"
+        for alert in alert_messages:
+            report += f"  {alert}\n"
+        report += "\n"
+    
+    report += "━" * 25 + "\n"
+    report += "<i>📌 Analisi automatica. Soglie personalizzabili nel codice.</i>"
     
     return report
-
 # ========== OFFERTE LAVORO ==========
 def cerca_offerte():
     """Genera lista offerte lavoro personalizzate"""
