@@ -1,0 +1,40 @@
+name: Supervisore
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Ogni ora, tutto il giorno
+  workflow_dispatch:       # Per test manuali
+
+jobs:
+  controlla-e-attiva:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Controlla se il workflow principale è già stato eseguito oggi
+        id: check
+        run: |
+          # Ottieni l'ultima esecuzione del workflow "Agente Matteo"
+          RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/agente-matteo.yml/runs?per_page=1")
+          
+          # Estrai la data dell'ultima esecuzione
+          LAST_RUN=$(echo "$RESPONSE" | jq -r '.workflow_runs[0].created_at')
+          TODAY=$(date -u +%Y-%m-%d)
+          
+          # Verifica se l'ultima esecuzione è oggi
+          if [[ "$LAST_RUN" == "$TODAY"* ]]; then
+            echo "✅ Workflow principale già eseguito oggi"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Workflow principale NON eseguito oggi, lo attivo..."
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Attiva il workflow principale
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/agente-matteo.yml/dispatches \
+            -d '{"ref":"main"}'
