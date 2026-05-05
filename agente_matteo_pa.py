@@ -25,7 +25,7 @@ def invia_telegram(messaggio):
         return None
 
 def analisi_materie_prime():
-    """Analisi dettagliata prezzi metalli ed energetici"""
+    """Analisi tecnica giornaliera - confronto con ieri e medie brevi"""
     
     commodities = {
         '🪙 Oro': 'GC=F',
@@ -36,92 +36,63 @@ def analisi_materie_prime():
         '⛽ Gas Naturale': 'NG=F'
     }
     
-    report = "📊 <b>RAPPORTO MATERIE PRIME - ANALISI COMPLETA</b>\n"
+    report = "📊 <b>RAPPORTO MATERIE PRIME - ANALISI GIORNALIERA</b>\n"
     report += f"📅 {datetime.now().strftime('%A %d %B %Y')}\n"
     report += "━" * 25 + "\n\n"
-    
-    soglie = {
-        '🪙 Oro': {'min': 2300, 'max': 2450},
-        '🔴 Rame': {'min': 4.20, 'max': 4.80},
-        '🛢️ Petrolio WTI': {'min': 75, 'max': 90}
-    }
-    
-    alert_messages = []
     
     for nome, simbolo in commodities.items():
         try:
             ticker = yf.Ticker(simbolo)
+            hist = ticker.history(period='15d')
             
-            # Scarichiamo diversi periodi
-            hist_1gg = ticker.history(period='1d')
-            hist_5gg = ticker.history(period='5d')
-            hist_1m = ticker.history(period='1mo')
-            hist_1y = ticker.history(period='1y')
-            
-            if len(hist_5gg) >= 2 and len(hist_1m) >= 2 and len(hist_1y) >= 2:
-                prezzo = hist_5gg['Close'].iloc[-1]
+            if len(hist) >= 2:
+                prezzo_oggi = hist['Close'].iloc[-1]
+                prezzo_ieri = hist['Close'].iloc[-2]
+                var_giorno = ((prezzo_oggi - prezzo_ieri) / prezzo_ieri) * 100
                 
-                # Calcoli variazioni
-                prezzo_ieri = hist_5gg['Close'].iloc[-2]
-                var_giorno = ((prezzo - prezzo_ieri) / prezzo_ieri) * 100
+                # Medie mobili semplici a 5 e 10 giorni
+                sma_5 = hist['Close'].tail(5).mean()
+                sma_10 = hist['Close'].tail(10).mean() if len(hist) >= 10 else prezzo_oggi
                 
-                prezzo_settimana_fa = hist_5gg['Close'].iloc[0] if len(hist_5gg) >= 5 else prezzo
-                var_settimana = ((prezzo - prezzo_settimana_fa) / prezzo_settimana_fa) * 100
+                # Segnali tecnici
+                sopra_sma5 = "✅ SOPRA" if prezzo_oggi > sma_5 else "❌ SOTTO"
+                sopra_sma10 = "✅ SOPRA" if prezzo_oggi > sma_10 else "❌ SOTTO"
                 
-                prezzo_mese_fa = hist_1m['Close'].iloc[0] if len(hist_1m) >= 20 else prezzo
-                var_mese = ((prezzo - prezzo_mese_fa) / prezzo_mese_fa) * 100
+                # Trend a breve termine
+                if prezzo_oggi > sma_5 > sma_10:
+                    trend = "🟢 FORTEMENTE RIALZISTA"
+                elif prezzo_oggi > sma_5:
+                    trend = "🟡 LEGGERMENTE RIALZISTA"
+                elif prezzo_oggi < sma_5 < sma_10:
+                    trend = "🔴 FORTEMENTE RIBASSISTA"
+                else:
+                    trend = "🟠 LATERALE / INCERTO"
                 
-                # Statistiche annuali
-                max_annuale = hist_1y['High'].max()
-                min_annuale = hist_1y['Low'].min()
-                posizione_annuale = ((prezzo - min_annuale) / (max_annuale - min_annuale)) * 100
+                # Massimi e minimi ultimi 5 giorni
+                max_5gg = hist['High'].tail(5).max()
+                min_5gg = hist['Low'].tail(5).min()
+                posizione_5gg = ((prezzo_oggi - min_5gg) / (max_5gg - min_5gg)) * 100
                 
-                # Volume
-                volume_medio = hist_5gg['Volume'].mean()
-                volume_oggi = hist_5gg['Volume'].iloc[-1]
-                volume_ratio = (volume_oggi / volume_medio) * 100
-                
-                # Trend
-                media_20gg = hist_1m['Close'].mean() if len(hist_1m) >= 20 else prezzo
-                trend = "🟢 RIALZISTA" if prezzo > media_20gg else "🔴 RIBASSISTA"
-                
-                # Costruzione report per singola commodity
+                # Costruzione report
                 report += f"<b>{nome}</b>\n"
-                report += f"  💰 Prezzo: <b>${prezzo:.2f}</b>\n"
-                report += f"\n  📈 <u>Variazioni:</u>\n"
-                report += f"     Oggi: {f'🟢 +{var_giorno:+.2f}%' if var_giorno > 0 else f'🔴 {var_giorno:+.2f}%'}\n"
-                report += f"     Settimana: {f'🟢 +{var_settimana:+.2f}%' if var_settimana > 0 else f'🔴 {var_settimana:+.2f}%'}\n"
-                report += f"     Mese: {f'🟢 +{var_mese:+.2f}%' if var_mese > 0 else f'🔴 {var_mese:+.2f}%'}\n"
-                report += f"\n  📊 <u>Range annuale:</u>\n"
-                report += f"     Min: ${min_annuale:.2f}\n"
-                report += f"     Max: ${max_annuale:.2f}\n"
-                report += f"     Posizione: {posizione_annuale:.0f}% del range\n"
-                report += f"\n  📊 <u>Volume scambi:</u>\n"
-                report += f"     Oggi: {volume_oggi:,.0f}\n"
-                report += f"     vs media: {f'🟢 +{volume_ratio:.0f}%' if volume_ratio > 100 else f'🔴 {volume_ratio:.0f}%'}\n"
-                report += f"\n  📈 Trend 20gg: {trend}\n"
-                report += "\n"
+                report += f"  💰 <b>${prezzo_oggi:.2f}</b>\n"
+                report += f"  📉 Variazione oggi: {f'🟢 +{var_giorno:+.2f}%' if var_giorno > 0 else f'🔴 {var_giorno:+.2f}%'}\n\n"
                 
-                # Alert personalizzati
-                if nome in soglie:
-                    if prezzo > soglie[nome]['max']:
-                        alert_messages.append(f"⚠️ {nome} sopra soglia max: ${prezzo:.2f} > ${soglie[nome]['max']}")
-                    elif prezzo < soglie[nome]['min']:
-                        alert_messages.append(f"⚠️ {nome} sotto soglia min: ${prezzo:.2f} < ${soglie[nome]['min']}")
-                        
-        except Exception as e:
-            report += f"<b>{nome}</b>\n  ❌ Dati non disponibili al momento\n\n"
-    
-    # Sezione alert
-    if alert_messages:
-        report += "━" * 25 + "\n"
-        report += "🚨 <b>ALERT DI MERCATO</b>\n"
-        for alert in alert_messages:
-            report += f"  {alert}\n"
-        report += "\n"
+                report += f"  📊 Medie mobili:\n"
+                report += f"     SMA 5gg: ${sma_5:.2f} → {sopra_sma5}\n"
+                report += f"     SMA 10gg: ${sma_10:.2f} → {sopra_sma10}\n\n"
+                
+                report += f"  📈 Range ultimi 5gg:\n"
+                report += f"     Min: ${min_5gg:.2f} | Max: ${max_5gg:.2f}\n"
+                report += f"     Posizione: {posizione_5gg:.0f}% del range\n\n"
+                
+                report += f"  🧭 Trend: {trend}\n\n"
+                
+        except Exception:
+            report += f"<b>{nome}</b>\n  ❌ Dati non disponibili\n\n"
     
     report += "━" * 25 + "\n"
-    report += "<i>📌 Analisi automatica. Soglie personalizzabili nel codice.</i>"
+    report += "<i>📌 SMA = Media Mobile Semplice. Più il prezzo è sopra le medie, più il trend è rialzista.</i>"
     
     return report
 # ========== OFFERTE LAVORO ==========
