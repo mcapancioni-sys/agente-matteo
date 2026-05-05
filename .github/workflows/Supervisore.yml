@@ -10,7 +10,7 @@ jobs:
       - name: Attiva Agente Matteo
         uses: benc-uk/workflow-dispatch@v1
         with:
-          workflow: agente-matteo.yml
+          workflow: main.yml
           token: ${{ secrets.SUPERVISOR_TOKEN }}
           
       - name: Riprogramma il prossimo supervisore (tra 24 ore)
